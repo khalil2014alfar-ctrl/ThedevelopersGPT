@@ -1,0 +1,81 @@
+"use client";
+import { useState } from "react";
+
+type Msg = { role: "user" | "assistant"; text: string };
+
+export default function Home() {
+  const [input, setInput] = useState("");
+  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  async function send() {
+    const text = input.trim();
+    if (!text || loading) return;
+
+    setInput("");
+    setLoading(true);
+    setMsgs((m) => [...m, { role: "user", text }, { role: "assistant", text: "" }]);
+
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }),
+    });
+
+    if (!res.ok || !res.body) {
+      setMsgs((m) => {
+        const copy = [...m];
+        copy[copy.length - 1] = { role: "assistant", text: "Server error." };
+        return copy;
+      });
+      setLoading(false);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let full = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      full += decoder.decode(value, { stream: true });
+
+      setMsgs((m) => {
+        const copy = [...m];
+        copy[copy.length - 1] = { role: "assistant", text: full };
+        return copy;
+      });
+    }
+
+    setLoading(false);
+  }
+
+  return (
+    <main style={{ maxWidth: 800, margin: "40px auto", padding: 16, fontFamily: "sans-serif" }}>
+      <h1>Lua / Luau Chat</h1>
+
+      <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 8, minHeight: 300 }}>
+        {msgs.map((m, i) => (
+          <div key={i} style={{ margin: "10px 0" }}>
+            <b>{m.role === "user" ? "You" : "Assistant"}:</b>
+            <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{m.text}</pre>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && send()}
+          placeholder="Ask a Lua/Luau question…"
+          style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid #ddd" }}
+        />
+        <button onClick={send} disabled={loading} style={{ padding: "10px 14px" }}>
+          {loading ? "Thinking..." : "Send"}
+        </button>
+      </div>
+    </main>
+  );
+}
