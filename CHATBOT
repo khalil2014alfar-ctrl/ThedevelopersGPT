@@ -1,0 +1,45 @@
+import OpenAI from "openai";
+
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+export async function POST(req: Request) {
+  try {
+    const { message } = await req.json();
+
+    const stream = await client.responses.create({
+      model: "gpt-5",
+      stream: true,
+      instructions:
+        "You are a Lua + Luau coding assistant. Prefer Luau for Roblox questions. Return code in fenced blocks and explain briefly.",
+      input: [{ role: "user", content: String(message ?? "") }],
+    });
+
+    const encoder = new TextEncoder();
+
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const event of stream) {
+            if (event.type === "response.output_text.delta") {
+              controller.enqueue(encoder.encode(event.delta));
+            }
+          }
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache",
+      },
+    });
+  } catch (err: any) {
+    return Response.json(
+      { error: err?.message ?? "Server error" },
+      { status: 500 }
+    );
+  }
+}
